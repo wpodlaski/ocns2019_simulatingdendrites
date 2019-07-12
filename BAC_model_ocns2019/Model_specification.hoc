@@ -1,0 +1,244 @@
+// --------------------------------------------------------------
+// passive & active membrane 
+// --------------------------------------------------------------
+objref mbSec, dendritic_only
+//create somaA,iseg,hill,myelin[2],node[2],dendA1_0
+create iseg,hill,myelin[2],node[2]
+//access somaA
+ 
+
+dendA1_0000000000001 mbSec = new SectionRef()	
+
+dendritic_only = new SectionList()
+
+//make sure no compartments exceed 20 uM length
+forall {
+    //if(nseg < L/20) { print secname(), " not accurate" nseg=L/20+1 }
+    dendritic_only.append()
+}    
+ 
+somaA  dendritic_only.remove()
+
+spA  = 2    // increase in membrane area due to spines
+
+ra        = 80      
+global_ra = ra
+rm        = 30000     
+c_m       = 0.6
+cm_myelin = 0.04
+g_pas_node = 0.02
+
+v_init    = -70            
+celsius   = 34      
+
+Ek = -90
+Ena = 60
+
+gna_dend = 27 
+gna_node = 30000   
+gna_soma = 54
+gna_myelin = 80  
+gkv_axon = 3000 
+gkv_soma = 600 
+gkv_dend = 30 
+
+gca_dend =1.5
+gkm_dend =.1
+gkca_dend=3.25
+
+gca_soma = 3 
+gkm_soma = 0.2 
+gkca_soma = 6.5 
+ 
+gka_soma  = 0.06        
+gka_dend  = 0.02
+gka_slope = 0   // no gradient
+
+tauR   = 80
+caiExp = 4
+rA     = 0.05
+rB     = 0.1
+
+// --------------------------------------------------------------
+// Low Threshold Ca Channel to reproduce frequency effect (Larkum, Kaiser, Sakmann, PNAS,1999)
+// --------------------------------------------------------------
+vh1_it2=56
+vh2_it2=415
+ah_it2=30       
+v12m_it2=45
+v12h_it2=65  
+am_it2=3
+vshift_it2=10
+vm1_it2=50
+vm2_it2=125
+it2_init=0.0005   
+gca_init=4.5
+
+// --------------------------------------------------------------
+// initiation zone in the dendrite 
+// with slightly elevated Ca conductance densities
+// --------------------------------------------------------------
+
+proc InitZone() {
+  mbSec.sec distance(0,1)
+  forall for(x) if(distance(x) <100) {
+      //print secname()
+      
+       gbar_sca = gca_init
+       gcabar_it2 =0
+  }
+}
+
+// --------------------------------------------------------------
+// Axon geometry
+// Similar to Mainen et al (Neuron, 1995)
+// --------------------------------------------------------------
+n_axon_seg = 5
+
+proc create_axon() {local somaArea
+
+  create iseg,hill,myelin[n_axon_seg],node[n_axon_seg]
+
+  somaA {
+    somaArea=0
+    for(x) somaArea+=area(x)
+    equiv_diam = sqrt(somaArea/(4*PI))
+  }
+
+  iseg {                
+     pt3dclear() pt3dadd(0,0,0,diam) pt3dadd(0,-1000,0,diam) 
+     L = 15
+     nseg = 5
+     diam = equiv_diam/10    
+  }
+
+  hill {                
+    pt3dclear() pt3dadd(0,0,0,diam) pt3dadd(0,-1000,0,diam) 
+    L = 10
+    nseg = 5
+    diam(0:1) = 5.4728284:1.3682071
+  }
+  for i=0,n_axon_seg-1 {
+    myelin[i] {         // myelin element
+      pt3dclear() pt3dadd(0,0,0,diam) pt3dadd(0,-1000,0,diam)   
+      nseg = 5
+      L = 100
+      diam = iseg.diam         
+    }
+    node[i] {           // nodes of Ranvier
+      pt3dclear() pt3dadd(0,0,0,diam) pt3dadd(0,-1000,0,diam) 
+      nseg = 1
+      L = 1.0           
+      diam = iseg.diam*.75       // nodes are thinner than axon
+    }
+  }
+  somaA connect hill(0), 0.5
+  hill connect iseg(0), 1
+  iseg connect myelin[0](0), 1
+  myelin[0] connect node[0](0), 1
+  for i=0,n_axon_seg-2  { 
+      node[i] connect myelin[i+1](0), 1 
+      myelin[i+1] connect node[i+1](0), 1
+  }
+}
+
+// --------------------------------------------------------------
+// Spines
+// --------------------------------------------------------------
+proc add_spines() { 
+
+  // increase all dendritic conductances by factor spA
+  // increase dendritic cm and g_pas by same
+  // to account for increase in membrane area without changing distances etc
+
+  forsec dendritic_only {
+    cm        *=spA 
+    g_pas     *=spA 
+    gbar_na   *=spA 
+    gbar_kv   *=spA 
+    gbar_km   *=spA 
+    gbar_kca  *=spA 
+    gbar_sca  *=spA 
+    gbar_kap  *=spA
+    gcabar_it2*=spA 
+
+  }
+}
+// --------------------------------------------------------------
+// Initialization routines
+// --------------------------------------------------------------
+proc init_cell() {  
+  // passive
+  forall {
+    insert pas
+    Ra = ra 
+    cm = c_m 
+    g_pas = 1/rm
+    e_pas = v_init
+  }
+  // exceptions along the axon
+  forsec "myelin" cm = cm_myelin
+  forsec "node" g_pas = g_pas_node
+  // active 
+  // axon
+  forall insert na
+  forsec "myelin" gbar_na = gna_myelin
+  forsec "hill" gbar_na = gna_node
+  forsec "iseg" gbar_na = gna_node
+  forsec "node" gbar_na = gna_node
+  forsec "iseg" { insert kv  gbar_kv = gkv_axon }
+  forsec "hill" { insert kv  gbar_kv = gkv_axon }
+
+  // dendrites
+  forsec dendritic_only {
+         		 gbar_na = gna_dend
+    insert kv    gbar_kv = gkv_dend 
+    insert km    gbar_km  = gkm_dend
+    insert kca   gbar_kca = gkca_dend
+    insert kap   gkabar_kap = gka_soma
+    insert sca   gbar_sca = gca_dend
+    insert it2   gcabar_it2=0
+    insert cad2
+  }
+
+  // soma
+  somaA {
+                 gbar_na = gna_soma
+    insert kv    gbar_kv = gkv_soma 
+    insert km    gbar_km = gkm_soma
+    insert kca   gbar_kca = gkca_soma
+    insert kap   gkabar_kap = gka_soma
+    insert sca   gbar_sca = gca_soma
+    insert cad2
+  }
+
+  forall if(ismembrane("k_ion")) ek = Ek
+  forall if(ismembrane("na_ion")) {
+    ena = Ena
+    vshift_na = -5
+  }
+  forall if(ismembrane("ca_ion")) {
+    eca = 140
+    ion_style("ca_ion",0,1,0,0,0)
+    vshift_ca = 10
+  }
+
+
+// ca diffusion  and kca parameters
+  taur_cad2 = tauR 
+  caix_kca  = caiExp
+  Ra_kca    = rA 
+  Rb_kca    = rB 
+
+  InitZone()
+  add_spines()
+
+}
+proc init() {local saveDt, i
+  finitialize(v_init)
+  fcurrent()
+  saveDt = dt
+  dt = 10
+  for i=0,99 fadvance()
+  dt = saveDt
+}
