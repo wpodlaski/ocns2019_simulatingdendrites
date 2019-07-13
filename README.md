@@ -1,5 +1,5 @@
 # ocns2019_simulatingdendrites
 
-Simulating dendrites at different levels of abstractions (morning session).  
+Simulating dendrites at different levels of abstractions.  
 
-Code written by A. Papoutsi and W. Podlaski, July 2019.
+Code written by E. Agnes, S. Chavlis, A. Papoutsi and W. Podlaski, July 2019.
